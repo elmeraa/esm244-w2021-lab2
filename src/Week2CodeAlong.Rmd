@@ -1,0 +1,140 @@
+---
+title: "Week 2 Code Along"
+author: "Elmera Azadpour"
+date: "1/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(janitor)
+library(palmerpenguins)
+library(here)
+# For PCA:
+library(ggfortify)
+# For ggplot customization:
+library(readxl)
+library(gghighlight)
+library(lubridate)
+library(plotly)
+
+# To make compound figures:
+library(patchwork)
+```
+
+## Part 1: PCA with penguins
+- select, remove NAs and scale data
+```{r}
+#View(penguins)
+penguin_pca <- penguins %>% 
+  select(body_mass_g, ends_with("_mm")) %>% 
+  drop_na() %>% 
+  scale() %>% 
+  prcomp()
+
+penguin_pca$rotation
+
+# make a dataset that match pca biplot and still contain other variables
+penguin_complete <- penguins %>% 
+  drop_na(body_mass_g, ends_with("_mm"))
+
+# Lets create a biplot using 'autoplot'
+autoplot(penguin_pca,
+         data = penguin_complete,
+         colour = 'species',
+         loadings = TRUE,
+         loadings.label = TRUE) +
+  theme_minimal()
+
+# Allisons graph
+autoplot(penguin_pca,
+         data = penguin_complete,
+         loadings = TRUE,
+         colour = 'species',
+         loadings.label = TRUE,
+         loadings.colour = "black",
+         loadings.label.colour = "black",
+         loadings.label.vjust = -0.5
+         ) +
+  scale_color_manual(values = c("blue","purple","orange")) +
+  scale_fill_manual(values = c("blue","purple","orange")) +
+  theme_minimal()
+```
+## Part 2 of lab: ggplot customization and reading in different file types
+
+#### Read in an .xlsx file & wrangle
+```{r}
+fish_noaa <- read_excel(here("data","foss_landings.xlsx")) %>% 
+  clean_names() %>% 
+  mutate(across(where(is.character),tolower)) %>% 
+  mutate(nmfs_name = str_sub(nmfs_name, end = -4)) %>% 
+  filter(confidentiality == "public")
+```
+
+Make a customized graph
+```{r}
+fish_plot <- ggplot(fish_noaa, aes(x = year, y = pounds)) +
+  geom_line(aes(color = nmfs_name), show.legend = F) +
+  theme_minimal()
+
+fish_plot
+
+## lets make an interactive graph
+ggplotly(fish_plot)
+
+## use gghighlight to highlight certain series, say for 'tuna' fish
+ggplot(fish_noaa, aes(x = year, y = pounds, group = nmfs_name)) +
+  geom_line() +
+  theme_minimal() +
+  gghighlight(nmfs_name == "tunas")
+
+## highlight based on values now, and change colors 
+ggplot(fish_noaa, aes(x = year, y = pounds, group = nmfs_name)) +
+  geom_line(aes(color = nmfs_name)) +
+  theme_minimal() +
+  gghighlight(max(pounds) > 1e8)
+```
+
+
+### Part 3: Read in data from url, wrangling using 'lubridate()', 'mutatue()',make a graph with months in logical order
+```{r}
+monroe_wt <- read_csv("https://data.bloomington.in.gov/dataset/2c81cfe3-62c2-46ed-8fcf-83c1880301d1/resource/13c8f7aa-af51-4008-80a9-56415c7c931e/download/mwtpdailyelectricitybclear.csv") %>% 
+  clean_names()
+```
+```{r}
+monroe_ts <- monroe_wt %>% 
+  mutate(date = mdy(date)) %>% 
+  mutate(record_month = month(date)) %>%
+  mutate(month_name = month.abb[record_month]) %>% 
+  mutate(month_name = fct_reorder(month_name, record_month))
+
+ggplot(monroe_ts, aes(month_name,total_k_wh)) + 
+  geom_jitter()
+
+## Allisons updated jitter plot
+ggplot(data = monroe_ts, aes(x = month_name, y = total_k_wh)) +
+  geom_jitter(aes(color = month_name), 
+              show.legend = FALSE,
+              alpha = 0.5, 
+              size = 0.3,
+              width = 0.2)
+  
+
+```
+## Part 3: Compound figures with 'patchwork'
+```{r}
+graph_a <- ggplot(penguins, aes(body_mass_g, flipper_length_mm)) +
+  geom_point()
+
+graph_b <- ggplot(penguins, aes(species, flipper_length_mm)) +
+  geom_jitter(aes(color = species), show.legend = F)
+
+# use | to put graphs side by side
+# use / to put graphs one over another
+
+graph_c <- (graph_a | graph_b) / fish_plot & theme_dark()
+graph_c + plot_annotation(tag_levels = 'A')
+
+ggsave(here("fig","graph_c_ah.png"), width = 5, height = 6)
+```
